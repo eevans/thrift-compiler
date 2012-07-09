@@ -5,6 +5,8 @@ Priority: extra
 Standards-Version: 3.9.3
 Build-Depends: debhelper (>= 9), bison, flex, autoconf, automake
 Homepage: http://thrift.apache.org
+Vcs-Git: git://anonscm.debian.org/users/eevans/thrift-compiler.git
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=users/eevans/thrift-compiler.git;a=summary
 
 Package: thrift-compiler
 Architecture: any
