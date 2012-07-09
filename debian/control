@@ -1,0 +1,19 @@
+Source: thrift-compiler
+Maintainer: Eric Evans <eevans@debian.org>
+Section: devel
+Priority: extra
+Standards-Version: 3.9.3
+Build-Depends: debhelper (>= 9), bison, flex, autoconf, automake
+Homepage: http://thrift.apache.org
+
+Package: thrift-compiler
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: code generator/compiler for Thrift definitions
+ Thrift is a software framework for the development of reliable and
+ performant communication and data serialization.  It combines a software
+ stack with code generation to build services that operate seamlessly
+ across a number of different development languages.
+ .
+ This package contains the compiler used to generate language code from
+ Thrift definition files.

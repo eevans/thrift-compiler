@@ -1,0 +1,78 @@
+.TH "THRIFT" "1" "July  9, 2012" "thrift-compiler" "thrift"
+.SH NAME
+thrift \ - code generator/compiler for Thrift IDL
+.SH SYNOPSIS
+.B thrift
+[options] \fIsource_file\fR
+.SH DESCRIPTION
+Thrift is a framework for efficient serialization and RPC services.  The
+.B thrift
+compiler accepts a source file containing definitions of Thrift structs and services,
+and generates the language-specific code to implement them.
+.SH OPTIONS
+.TP
+\fB\-version\fR
+.RS 4
+print the compiler version and exit
+.RE
+.TP
+\fB\-o DIRECTORY\fR
+.RS 4
+Set the output directory for gen-* packages (default: current directory)
+.RE
+.TP
+\fB\-out DIRECTORY\fR
+.RS 4
+Set the ouput location for generated files. (no gen-* folder will be created)
+.RE
+.TP
+\fB\-I DIRECTORY\fR
+.RS 4
+Add a directory to the list of directories searched for include directives
+.RE
+.TP
+\fB\-nowarn\fR
+.RS 4
+Suppress all compiler warnings (BAD!)
+.RE
+.TP
+\fB\-strict\fR
+.RS 4
+Strict compiler warnings on
+.RE
+.TP
+\fB\-v[erbose]\fR
+.RS 4
+Verbose mode
+.RE
+.TP
+\fB\-r[ecurse]\fR
+.RS 4
+Also generate included files
+.RE
+.TP
+\fB\-debug\fR
+.RS 4
+Parse debug trace to stdout
+.RE
+.TP
+\fB\-\-gen STRING\fR
+.RS 4
+Generate code with a dynamically-registered generator. STRING has the form
+language[:key1=val1[,key2,[key3=val3]]].  Keys and values are options passed to
+the generator.  Many options will not require values.  For a complete list of
+supported generators, run
+.B thrift
+without arguments.
+.RE
+.SH AUTHOR
+Thrift is a top-level project of the Apache Software Foundation, (see
+http://thrift.apache.org).
+.PP
+This manual page was written by Eric Evans <eevans@debian.org> for the Debian
+system (but may be used by others). Permission is granted to copy, distribute
+and/or modify this document under the terms of the GNU General Public License,
+Version 2 or any  later version published by the Free Software Foundation.
+.PP
+On Debian systems, the complete text of the GNU General Public License can be
+found in /usr/share/common-licenses/GPL.
