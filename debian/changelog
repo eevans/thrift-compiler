@@ -1,3 +1,9 @@
+thrift-compiler (0.8.0-2) unstable; urgency=low
+
+  * Added missing license and attribution to debian/copyright.
+
+ -- Eric Evans <eevans@debian.org>  Mon, 20 Aug 2012 18:08:56 -0500
+
 thrift-compiler (0.8.0-1) unstable; urgency=low
 
   * Initial release. (Closes: #648451)
