@@ -406,7 +406,7 @@ string t_py_generator::py_autogen_comment() {
  */
 string t_py_generator::py_imports() {
   return
-    string("from thrift.Thrift import TType, TMessageType, TException");
+    string("from thrift.Thrift import TType, TMessageType, TException, TApplicationException");
 }
 
 /**
@@ -1539,10 +1539,13 @@ void t_py_generator::generate_service_remote(t_service* tservice) {
 
     f_remote << endl;
   }
-  f_remote << "else:" << endl;
-  f_remote << "  print 'Unrecognized method %s' % cmd" << endl;
-  f_remote << "  sys.exit(1)" << endl;
-  f_remote << endl;
+
+  if (functions.size() > 0) {
+    f_remote << "else:" << endl;
+    f_remote << "  print 'Unrecognized method %s' % cmd" << endl;
+    f_remote << "  sys.exit(1)" << endl;
+    f_remote << endl;
+  }
 
   f_remote << "transport.close()" << endl;
 
@@ -1789,7 +1792,7 @@ void t_py_generator::generate_process_function(t_service* tservice,
         indent() << "  error.raiseException()" << endl;
       for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
         f_service_ <<
-          indent() << "except " << type_name((*x_iter)->get_type()) << ", " << (*x_iter)->get_name() << ":" << endl;
+          indent() << "except " << type_name((*x_iter)->get_type()) << " as " << (*x_iter)->get_name() << ":" << endl;
         if (!tfunction->is_oneway()) {
           indent_up();
           f_service_ <<
@@ -1844,7 +1847,7 @@ void t_py_generator::generate_process_function(t_service* tservice,
       indent_down();
       for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
         f_service_ <<
-          indent() << "except " << type_name((*x_iter)->get_type()) << ", " << (*x_iter)->get_name() << ":" << endl;
+          indent() << "except " << type_name((*x_iter)->get_type()) << " as " << (*x_iter)->get_name() << ":" << endl;
         if (!tfunction->is_oneway()) {
           indent_up();
           f_service_ <<
