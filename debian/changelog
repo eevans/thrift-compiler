@@ -1,3 +1,9 @@
+thrift-compiler (0.9.0-2) unstable; urgency=low
+
+  * Updated versioning in build.
+
+ -- Eric Evans <eevans@debian.org>  Thu, 31 Jan 2013 17:49:34 -0600
+
 thrift-compiler (0.9.0-1) unstable; urgency=low
 
   * New upstream release.
