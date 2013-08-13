@@ -1,3 +1,10 @@
+thrift-compiler (0.9.0-3) unstable; urgency=low
+
+  * Fixed FTBFS caused by a backward incompatible change to header file
+    naming in automake's yacc support, (Closes: #713741).
+
+ -- Eric Evans <eevans@debian.org>  Tue, 13 Aug 2013 13:29:57 +0200
+
 thrift-compiler (0.9.0-2) unstable; urgency=low
 
   * Updated versioning in build.
