@@ -89,7 +89,7 @@ void unexpected_token(char* text) {
 intconstant   ([+-]?[0-9]+)
 hexconstant   ("0x"[0-9A-Fa-f]+)
 dubconstant   ([+-]?[0-9]*(\.[0-9]+)?([eE][+-]?[0-9]+)?)
-identifier    ([a-zA-Z_][\.a-zA-Z_0-9]*)
+identifier    ([a-zA-Z_](\.[a-zA-Z_0-9]|[a-zA-Z_0-9])*)
 whitespace    ([ \t\r\n]*)
 sillycomm     ("/*""*"*"*/")
 multicomm     ("/*"[^*]"/"*([^*/]|[^*]"/"|"*"[^/])*"*"*"*/")
@@ -97,7 +97,7 @@ doctext       ("/**"([^*/]|[^*]"/"|"*"[^/])*"*"*"*/")
 comment       ("//"[^\n]*)
 unixcomment   ("#"[^\n]*)
 symbol        ([:;\,\{\}\(\)\=<>\[\]])
-st_identifier ([a-zA-Z-][\.a-zA-Z_0-9-]*)
+st_identifier ([a-zA-Z-](\.[a-zA-Z_0-9-]|[a-zA-Z_0-9-])*)
 literal_begin (['\"])
 
 %%
@@ -143,8 +143,14 @@ literal_begin (['\"])
 "double"             { return tok_double;               }
 "string"             { return tok_string;               }
 "binary"             { return tok_binary;               }
-"slist"              { return tok_slist;                }
-"senum"              { return tok_senum;                }
+"slist" {
+  pwarning(0, "\"slist\" is deprecated and will be removed in a future compiler version.  This type should be replaced with \"string\".\n");
+  return tok_slist;
+}
+"senum" {
+  pwarning(0, "\"senum\" is deprecated and will be removed in a future compiler version.  This type should be replaced with \"string\".\n");
+  return tok_senum;
+}
 "map"                { return tok_map;                  }
 "list"               { return tok_list;                 }
 "set"                { return tok_set;                  }

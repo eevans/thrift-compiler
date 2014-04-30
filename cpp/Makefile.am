@@ -21,6 +21,10 @@
 # Please see doc/old-thrift-license.txt in the Thrift distribution for
 # details.
 
+# Override Automake rule that forces .hh extension 
+am__yacc_c2h = sed -e s/cc$$/h/ -e s/cpp$$/hpp/ -e s/cxx$$/hxx/ \
+           -e s/c++$$/h++/ -e s/c$$/h/
+
 AM_YFLAGS = -d
 LIBS =
 BUILT_SOURCES =
@@ -85,6 +89,7 @@ thrift_SOURCES += src/generate/t_c_glib_generator.cc \
                   src/generate/t_javame_generator.cc \
                   src/generate/t_delphi_generator.cc \
                   src/generate/t_go_generator.cc \
+                  src/generate/t_gv_generator.cc \
                   src/generate/t_d_generator.cc
 
 thrift_CPPFLAGS = -I$(srcdir)/src
@@ -100,12 +105,13 @@ libparse_a_SOURCES = src/thrifty.yy \
 WINDOWS_DIST = \
              compiler.sln \
              compiler.vcxproj \
-             compiler.vcxproj.filters
+             compiler.vcxproj.filters \
+             README_Windows.txt
 
 EXTRA_DIST = \
              $(WINDOWS_DIST)
 
 clean-local:
-	$(RM) thriftl.cc thrifty.cc thrifty.h version.h windows/version.h
+	$(RM) thriftl.cc thrifty.cc thrifty.h thrifty.hh version.h windows/version.h
 
 src/main.cc: version.h
