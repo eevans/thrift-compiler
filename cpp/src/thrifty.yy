@@ -450,6 +450,10 @@ Definition:
         if (g_parent_scope != NULL) {
           g_parent_scope->add_type(g_parent_prefix + $1->get_name(), $1);
         }
+        if (! g_program->is_unique_typename($1)) {
+          yyerror("Type \"%s\" is already defined.", $1->get_name().c_str());
+          exit(1);
+        }
       }
       $$ = $1;
     }
@@ -462,6 +466,10 @@ Definition:
           g_parent_scope->add_service(g_parent_prefix + $1->get_name(), $1);
         }
         g_program->add_service($1);
+        if (! g_program->is_unique_typename($1)) {
+          yyerror("Type \"%s\" is already defined.", $1->get_name().c_str());
+          exit(1);
+        }
       }
       $$ = $1;
     }
@@ -902,7 +910,7 @@ FieldList:
       pdebug("FieldList -> FieldList , Field");
       $$ = $1;
       if (!($$->append($2))) {
-        yyerror("Field identifier %d for \"%s\" has already been used", $2->get_key(), $2->get_name().c_str());
+        yyerror("\"%d: %s\" - field identifier/name has already been used", $2->get_key(), $2->get_name().c_str());
         exit(1);
       }
     }
@@ -960,7 +968,7 @@ FieldIdentifier:
              * warn if the user-specified negative value isn't what
              * thrift would have auto-assigned.
              */
-            pwarning(1, "Negative field key (%d) differs from what would be "
+            pwarning(1, "Nonpositive field key (%"PRIi64") differs from what would be "
                      "auto-assigned by thrift (%d).\n", $1, y_field_val);
           }
           /*
@@ -971,7 +979,7 @@ FieldIdentifier:
           $$.value = $1;
           $$.auto_assigned = false;
         } else {
-          pwarning(1, "Nonpositive value (%d) not allowed as a field key.\n",
+          pwarning(1, "Nonpositive value (%"PRIi64") not allowed as a field key.\n",
                    $1);
           $$.value = y_field_val--;
           $$.auto_assigned = true;
