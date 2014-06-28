@@ -17,6 +17,8 @@
  * under the License.
  */
 
+#include <cassert>
+
 #include <sstream>
 #include <string>
 #include <fstream>
@@ -29,8 +31,15 @@
 
 #include "platform.h"
 #include "t_oop_generator.h"
-using namespace std;
 
+using std::map;
+using std::ofstream;
+using std::ostringstream;
+using std::string;
+using std::stringstream;
+using std::vector;
+
+static const string endl = "\n";  // avoid ostream << std::endl flushes
 
 /**
  * Java code generator.
@@ -61,6 +70,9 @@ public:
 
     iter = parsed_options.find("android_legacy");
     android_legacy_ = (iter != parsed_options.end());
+
+    iter = parsed_options.find("sorted_containers");
+    sorted_containers_ = (iter != parsed_options.end());
 
     iter = parsed_options.find("java5");
     java5_ = (iter != parsed_options.end());
@@ -134,7 +146,10 @@ public:
   void generate_service_client    (t_service* tservice);
   void generate_service_async_client(t_service* tservice);
   void generate_service_server    (t_service* tservice);
+  void generate_service_async_server    (t_service* tservice);
   void generate_process_function  (t_service* tservice, t_function* tfunction);
+  void generate_process_async_function  (t_service* tservice, t_function* tfunction);
+
 
   void generate_java_union(t_struct* tstruct);
   void generate_union_constructor(ofstream& out, t_struct* tstruct);
@@ -251,7 +266,7 @@ public:
   std::string java_type_imports();
   std::string type_name(t_type* ttype, bool in_container=false, bool in_init=false, bool skip_generic=false);
   std::string base_type_name(t_base_type* tbase, bool in_container=false);
-  std::string declare_field(t_field* tfield, bool init=false);
+  std::string declare_field(t_field* tfield, bool init=false, bool comment=false);
   std::string function_signature(t_function* tfunction, std::string prefix="");
   std::string function_signature_async(t_function* tfunction, bool use_base_method = false, std::string prefix="");
   std::string argument_list(t_struct* tstruct, bool include_types = true);
@@ -263,6 +278,9 @@ public:
   void generate_field_descs(ofstream& out, t_struct* tstruct);
   void generate_field_name_constants(ofstream& out, t_struct* tstruct);
 
+  std::string make_valid_java_filename( std::string const & fromName);
+  std::string make_valid_java_identifier( std::string const & fromName);
+  
   bool type_can_be_null(t_type* ttype) {
     ttype = get_true_type(ttype);
 
@@ -292,6 +310,7 @@ public:
   bool gen_hash_code_;
   bool android_legacy_;
   bool java5_;
+  bool sorted_containers_;
 };
 
 
@@ -341,8 +360,14 @@ string t_java_generator::java_package() {
  */
 string t_java_generator::java_type_imports() {
   string hash_builder;
+  string tree_set_and_map;
   if (gen_hash_code_) {
-    hash_builder = "import org.apache.commons.lang.builder.HashCodeBuilder;\n";
+    hash_builder = "import org.apache.commons.lang3.builder.HashCodeBuilder;\n";
+  }
+  if (sorted_containers_) {
+    tree_set_and_map = string() + 
+      "import java.util.TreeSet;\n" +
+      "import java.util.TreeMap;\n";
   }
 
   return
@@ -356,6 +381,8 @@ string t_java_generator::java_type_imports() {
     "import org.apache.thrift.protocol.TProtocolException;\n" +
     "import org.apache.thrift.EncodingUtils;\n" +
     "import org.apache.thrift.TException;\n" +
+    "import org.apache.thrift.async.AsyncMethodCallback;\n"+
+    "import org.apache.thrift.server.AbstractNonblockingServer.*;\n"+
     "import java.util.List;\n" +
     "import java.util.ArrayList;\n" +
     "import java.util.Map;\n" +
@@ -364,6 +391,7 @@ string t_java_generator::java_type_imports() {
     "import java.util.Set;\n" +
     "import java.util.HashSet;\n" +
     "import java.util.EnumSet;\n" +
+    tree_set_and_map + 
     "import java.util.Collections;\n" +
     "import java.util.BitSet;\n" +
     "import java.nio.ByteBuffer;\n"
@@ -395,7 +423,7 @@ void t_java_generator::generate_typedef(t_typedef* ttypedef) {
  */
 void t_java_generator::generate_enum(t_enum* tenum) {
   // Make output file
-  string f_enum_name = package_dir_+"/"+(tenum->get_name())+".java";
+  string f_enum_name = package_dir_+"/"+make_valid_java_filename(tenum->get_name())+".java";
   ofstream f_enum;
   f_enum.open(f_enum_name.c_str());
 
@@ -487,7 +515,7 @@ void t_java_generator::generate_consts(std::vector<t_const*> consts) {
     return;
   }
 
-  string f_consts_name = package_dir_+ '/' + program_name_ + "Constants.java";
+  string f_consts_name = package_dir_+ '/' + make_valid_java_filename(program_name_) + "Constants.java";
   ofstream f_consts;
   f_consts.open(f_consts_name.c_str());
 
@@ -498,7 +526,7 @@ void t_java_generator::generate_consts(std::vector<t_const*> consts) {
     java_type_imports();
 
   f_consts <<
-    "public class " << program_name_ << "Constants {" << endl <<
+    "public class " << make_valid_java_identifier(program_name_) << "Constants {" << endl <<
     endl;
   indent_up();
   vector<t_const*>::iterator c_iter;
@@ -691,7 +719,7 @@ void t_java_generator::generate_xception(t_struct* txception) {
 void t_java_generator::generate_java_struct(t_struct* tstruct,
                                             bool is_exception) {
   // Make output file
-  string f_struct_name = package_dir_+"/"+(tstruct->get_name())+".java";
+  string f_struct_name = package_dir_+"/"+make_valid_java_filename(tstruct->get_name())+".java";
   ofstream f_struct;
   f_struct.open(f_struct_name.c_str());
 
@@ -713,7 +741,7 @@ void t_java_generator::generate_java_struct(t_struct* tstruct,
  */
 void t_java_generator::generate_java_union(t_struct* tstruct) {
   // Make output file
-  string f_struct_name = package_dir_+"/"+(tstruct->get_name())+".java";
+  string f_struct_name = package_dir_+"/"+make_valid_java_filename(tstruct->get_name())+".java";
   ofstream f_struct;
   f_struct.open(f_struct_name.c_str());
 
@@ -785,8 +813,24 @@ void t_java_generator::generate_java_union(t_struct* tstruct) {
 }
 
 void t_java_generator::generate_union_constructor(ofstream& out, t_struct* tstruct) {
+  const vector<t_field*>& members = tstruct->get_members();
+  vector<t_field*>::const_iterator m_iter;
+
   indent(out) << "public " << type_name(tstruct) << "() {" << endl;
-  indent(out) << "  super();" << endl;
+  indent_up();
+  bool default_value = false;
+  for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
+    t_type* type = get_true_type((*m_iter)->get_type());
+    if ((*m_iter)->get_value() != NULL) {
+      indent(out) << "super(_Fields." << constant_name((*m_iter)->get_name()) << ", " << render_const_value(out, type, (*m_iter)->get_value()) << ");" << endl;
+      default_value = true;
+      break;
+    }
+  }
+  if (default_value == false) {
+    indent(out) << "super();" << endl;
+  }
+  indent_down();
   indent(out) << "}" << endl << endl;
 
   indent(out) << "public " << type_name(tstruct) << "(_Fields setField, Object value) {" << endl;
@@ -802,8 +846,6 @@ void t_java_generator::generate_union_constructor(ofstream& out, t_struct* tstru
   indent(out) << "}" << endl << endl;
 
   // generate "constructors" for each field
-  const vector<t_field*>& members = tstruct->get_members();
-  vector<t_field*>::const_iterator m_iter;
   for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
     t_type* type = (*m_iter)->get_type();
     indent(out) << "public static " << type_name(tstruct) << " " << (*m_iter)->get_name() << "(" << type_name(type) << " value) {" << endl;
@@ -1006,6 +1048,7 @@ void t_java_generator::generate_standard_scheme_read_value(ofstream& out, t_stru
   indent_down();
   indent(out) << "} else {" << endl;
   indent_up();  
+  indent(out) << "org.apache.thrift.protocol.TProtocolUtil.skip(iprot, field.type);" << endl;
   indent(out) << "return null;" << endl;
   indent_down();
   indent(out) << "}" << endl;
@@ -1245,7 +1288,7 @@ void t_java_generator::generate_java_struct_definition(ofstream &out,
   if (is_exception) {
     out << "extends TException ";
   }
-  out << "implements org.apache.thrift.TBase<" << tstruct->get_name() << ", " << tstruct->get_name() << "._Fields>, java.io.Serializable, Cloneable";
+  out << "implements org.apache.thrift.TBase<" << tstruct->get_name() << ", " << tstruct->get_name() << "._Fields>, java.io.Serializable, Cloneable, Comparable<" << tstruct->get_name() << ">";
 
   out << " ";
 
@@ -1274,7 +1317,7 @@ void t_java_generator::generate_java_struct_definition(ofstream &out,
       generate_java_doc(out, *m_iter);
       indent(out) << "public ";
     }
-    out << declare_field(*m_iter, false) << endl;
+    out << declare_field(*m_iter, false, true) << endl;
   }
 
   out << endl;
@@ -1577,6 +1620,7 @@ void t_java_generator::generate_java_struct_equality(ofstream& out,
 }
 
 void t_java_generator::generate_java_struct_compare_to(ofstream& out, t_struct* tstruct) {
+  indent(out) << "@Override" << endl;
   indent(out) << "public int compareTo(" << type_name(tstruct) << " other) {" << endl;
   indent_up();
 
@@ -1586,20 +1630,19 @@ void t_java_generator::generate_java_struct_compare_to(ofstream& out, t_struct* 
   out << endl;
 
   indent(out) << "int lastComparison = 0;" << endl;
-  indent(out) << type_name(tstruct) << " typedOther = (" << type_name(tstruct) << ")other;" << endl;
   out << endl;
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
   for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
     t_field* field = *m_iter;
-    indent(out) << "lastComparison = Boolean.valueOf(" << generate_isset_check(field) << ").compareTo(typedOther." << generate_isset_check(field) << ");" << endl;
+    indent(out) << "lastComparison = Boolean.valueOf(" << generate_isset_check(field) << ").compareTo(other." << generate_isset_check(field) << ");" << endl;
     indent(out) << "if (lastComparison != 0) {" << endl;
     indent(out) << "  return lastComparison;" << endl;
     indent(out) << "}" << endl;
 
     indent(out) << "if (" << generate_isset_check(field) << ") {" << endl;
-    indent(out) << "  lastComparison = org.apache.thrift.TBaseHelper.compareTo(this." << field->get_name() << ", typedOther." << field->get_name() << ");" << endl;
+    indent(out) << "  lastComparison = org.apache.thrift.TBaseHelper.compareTo(this." << field->get_name() << ", other." << field->get_name() << ");" << endl;
     indent(out) << "  if (lastComparison != 0) {" << endl;
     indent(out) << "    return lastComparison;" << endl;
     indent(out) << "  }" << endl;
@@ -2190,7 +2233,7 @@ void t_java_generator::generate_field_value_meta_data(std::ofstream& out, t_type
  */
 void t_java_generator::generate_service(t_service* tservice) {
   // Make output file
-  string f_service_name = package_dir_+"/"+service_name_+".java";
+  string f_service_name = package_dir_+"/"+make_valid_java_filename(service_name_)+".java";
   f_service_.open(f_service_name.c_str());
 
   f_service_ <<
@@ -2207,6 +2250,7 @@ void t_java_generator::generate_service(t_service* tservice) {
   generate_service_client(tservice);
   generate_service_async_client(tservice);
   generate_service_server(tservice);
+  generate_service_async_server(tservice);
   generate_service_helpers(tservice);
 
   indent_down();
@@ -2260,6 +2304,7 @@ void t_java_generator::generate_service_async_interface(t_service* tservice) {
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
 }
+
 
 /**
  * Generates structs for all the service args and return types
@@ -2623,6 +2668,61 @@ void t_java_generator::generate_service_server(t_service* tservice) {
 }
 
 /**
+ * Generates a service server definition.
+ *
+ * @param tservice The service to generate a server for.
+ */
+void t_java_generator::generate_service_async_server(t_service* tservice) {
+  // Generate the dispatch methods
+  vector<t_function*> functions = tservice->get_functions();
+  vector<t_function*>::iterator f_iter;
+
+  // Extends stuff
+  string extends = "";
+  string extends_processor = "";
+  if (tservice->get_extends() == NULL) {
+    extends_processor = "org.apache.thrift.TBaseAsyncProcessor<I>";
+  } else {
+    extends = type_name(tservice->get_extends());
+    extends_processor = extends + ".AsyncProcessor<I>";
+  }
+
+  // Generate the header portion
+  indent(f_service_) <<
+    "public static class AsyncProcessor<I extends AsyncIface> extends " << extends_processor << " {" << endl;
+  indent_up();
+
+  indent(f_service_) << "private static final Logger LOGGER = LoggerFactory.getLogger(AsyncProcessor.class.getName());" << endl;
+
+  indent(f_service_) << "public AsyncProcessor(I iface) {" << endl;
+  indent(f_service_) << "  super(iface, getProcessMap(new HashMap<String, org.apache.thrift.AsyncProcessFunction<I, ? extends org.apache.thrift.TBase, ?>>()));" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "protected AsyncProcessor(I iface, Map<String,  org.apache.thrift.AsyncProcessFunction<I, ? extends  org.apache.thrift.TBase, ?>> processMap) {" << endl;
+  indent(f_service_) << "  super(iface, getProcessMap(processMap));" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+
+  indent(f_service_) << "private static <I extends AsyncIface> Map<String,  org.apache.thrift.AsyncProcessFunction<I, ? extends  org.apache.thrift.TBase,?>> getProcessMap(Map<String,  org.apache.thrift.AsyncProcessFunction<I, ? extends  org.apache.thrift.TBase, ?>> processMap) {" << endl;
+  indent_up();
+  for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    indent(f_service_) << "processMap.put(\"" << (*f_iter)->get_name() << "\", new " << (*f_iter)->get_name() << "());" << endl;
+  }
+  indent(f_service_) << "return processMap;" << endl;
+  indent_down();
+  indent(f_service_) << "}" << endl << endl;
+
+  // Generate the process subfunctions
+  for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    generate_process_async_function(tservice, *f_iter);
+  }
+
+  indent_down();
+  indent(f_service_) << "}" << endl << endl;
+}
+
+
+/**
  * Generates a struct and helpers for a function.
  *
  * @param tfunction The function
@@ -2646,6 +2746,159 @@ void t_java_generator::generate_function_helpers(t_function* tfunction) {
   }
 
   generate_java_struct_definition(f_service_, &result, false, true, true);
+}
+
+
+
+/**
+ * Generates a process function definition.
+ *
+ * @param tfunction The function to write a dispatcher for
+ */
+void t_java_generator::generate_process_async_function(t_service* tservice,
+                                                 t_function* tfunction) {
+  string argsname = tfunction->get_name() + "_args";
+
+  string resultname = tfunction->get_name() + "_result";
+    if (tfunction->is_oneway()) {
+      resultname = "org.apache.thrift.TBase";
+    }
+
+  string resulttype = type_name(tfunction->get_returntype(),true);
+
+
+  (void) tservice;
+  // Open class
+  indent(f_service_) <<
+    "public static class " << tfunction->get_name() << "<I extends AsyncIface> extends org.apache.thrift.AsyncProcessFunction<I, " << argsname << ", "<<resulttype<<"> {" << endl;
+  indent_up();
+
+  indent(f_service_) << "public " << tfunction->get_name() << "() {" << endl;
+  indent(f_service_) << "  super(\"" << tfunction->get_name() << "\");" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "public " << argsname << " getEmptyArgsInstance() {" << endl;
+  indent(f_service_) << "  return new " << argsname << "();" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "public AsyncMethodCallback<"<<resulttype<<"> getResultHandler(final AsyncFrameBuffer fb, final int seqid) {" << endl;
+  indent_up();
+  indent(f_service_) << "final org.apache.thrift.AsyncProcessFunction fcall = this;"<<endl;
+  indent(f_service_) << "return new AsyncMethodCallback<"<<resulttype<<">() { " << endl;
+  indent_up();
+  indent(f_service_) <<	"public void onComplete(" << resulttype <<" o) {" << endl;
+
+  indent_up();
+  if (!tfunction->is_oneway()) {
+    indent(f_service_) <<resultname<<" result = new "<<resultname<<"();"<<endl;
+
+    if (!tfunction->get_returntype()->is_void()) {
+  	  indent(f_service_) << "result.success = o;"<<endl;
+      // Set isset on success field
+  	  if (!type_can_be_null(tfunction->get_returntype())) {
+  	    indent(f_service_) << "result.set" << get_cap_name("success") << get_cap_name("isSet") << "(true);" << endl;
+  	  }
+    }
+
+    indent(f_service_) << "try {"<<endl;
+    indent(f_service_) << "  fcall.sendResponse(fb,result, org.apache.thrift.protocol.TMessageType.REPLY,seqid);"<<endl;
+    indent(f_service_) << "  return;"<<endl;
+    indent(f_service_) << "} catch (Exception e) {"<<endl;
+    indent(f_service_) << "  LOGGER.error(\"Exception writing to internal frame buffer\", e);"<<endl;
+    indent(f_service_) << "}"<<endl;
+    indent(f_service_) << "fb.close();"<<endl;
+  }
+  indent_down();
+  indent(f_service_) << "}" <<endl;
+
+  indent(f_service_) << "public void onError(Exception e) {"<<endl;
+  indent_up();
+
+
+
+  if (!tfunction->is_oneway()) {
+	 indent(f_service_) <<"byte msgType = org.apache.thrift.protocol.TMessageType.REPLY;"<<endl;
+	 indent(f_service_) <<"org.apache.thrift.TBase msg;"<<endl;
+     indent(f_service_) <<resultname<<" result = new "<<resultname<<"();"<<endl;
+
+     t_struct* xs = tfunction->get_xceptions();
+     const std::vector<t_field*>& xceptions = xs->get_members();
+     vector<t_field*>::const_iterator x_iter;
+     bool first = true;
+     if (xceptions.size() > 0) {
+    	 for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
+    		 first ? first = false : indent(f_service_) << "else ";
+    		 indent(f_service_) << "if (e instanceof " << type_name((*x_iter)->get_type(), false, false)<<") {" << endl;
+    		 indent(f_service_) << indent() << "result." << (*x_iter)->get_name() << " = (" << type_name((*x_iter)->get_type(), false, false) << ") e;" << endl;
+    	  	 indent(f_service_) << indent() << "result.set" << get_cap_name((*x_iter)->get_name()) << get_cap_name("isSet") << "(true);" << endl;
+    		 indent(f_service_) << indent() << "msg = result;"<<endl;
+
+    	  	 indent(f_service_) << "}"<<endl;
+    	 }
+    	 indent(f_service_) << " else "<<endl;
+     }
+
+     indent(f_service_) << "{"<<endl;
+     indent_up();
+     indent(f_service_) << "msgType = org.apache.thrift.protocol.TMessageType.EXCEPTION;"<<endl;
+     indent(f_service_) << "msg = (org.apache.thrift.TBase)new org.apache.thrift.TApplicationException(org.apache.thrift.TApplicationException.INTERNAL_ERROR, e.getMessage());"<<endl;
+     indent_down();
+     indent(f_service_) << "}"<<endl;
+
+
+     indent(f_service_) << "try {"<<endl;
+     indent(f_service_) << "  fcall.sendResponse(fb,msg,msgType,seqid);"<<endl;
+     indent(f_service_) << "  return;"<<endl;
+     indent(f_service_) << "} catch (Exception ex) {"<<endl;
+     indent(f_service_) << "  LOGGER.error(\"Exception writing to internal frame buffer\", ex);"<<endl;
+     indent(f_service_) << "}"<<endl;
+     indent(f_service_) << "fb.close();"<<endl;
+  }
+  indent_down();
+  indent(f_service_) << "}" <<endl;
+  indent_down();
+  indent(f_service_) << "};" <<endl;
+  indent_down();
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "protected boolean isOneway() {" << endl;
+  indent(f_service_) << "  return " << ((tfunction->is_oneway())?"true":"false") << ";" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "public void start(I iface, " << argsname << " args, org.apache.thrift.async.AsyncMethodCallback<"<<resulttype<<"> resultHandler) throws TException {" << endl;
+  indent_up();
+
+  // Generate the function call
+  t_struct* arg_struct = tfunction->get_arglist();
+  const std::vector<t_field*>& fields = arg_struct->get_members();
+  vector<t_field*>::const_iterator f_iter;
+  f_service_ << indent();
+
+  f_service_ << "iface." << tfunction->get_name() << "(";
+  bool first = true;
+  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
+    if (first) {
+      first = false;
+    } else {
+      f_service_ << ", ";
+    }
+    f_service_ << "args." << (*f_iter)->get_name();
+  }
+  if (!first)
+	  f_service_ << ",";
+  f_service_ << "resultHandler";
+  f_service_ << ");" << endl;
+
+
+  indent_down();
+  indent(f_service_) << "}";
+
+  // Close function
+  f_service_ << endl;
+
+  // Close class
+  indent_down();
+  f_service_ << indent() << "}" << endl << endl;
 }
 
 /**
@@ -2754,6 +3007,7 @@ void t_java_generator::generate_process_function(t_service* tservice,
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
 }
+
 
 /**
  * Deserializes a field of any type.
@@ -2879,10 +3133,15 @@ void t_java_generator::generate_deserialize_container(ofstream& out,
 
   indent(out) << prefix << " = new " << type_name(ttype, false, true);
   // size the collection correctly
-  out << "("
-    << (ttype->is_list() ? "" : "2*" )
-    << obj << ".size"
-    << ");" << endl;
+  if (sorted_containers_ && (ttype->is_map() || ttype->is_set())) {
+    // TreeSet and TreeMap don't have any constructor which takes a capactity as an argument
+    out << "();" << endl;
+  } else {
+    out << "("
+      << (ttype->is_list() ? "" : "2*" )
+      << obj << ".size"
+      << ");" << endl;
+  }
 
   // For loop iterates over elements
   string i = tmp("_i");
@@ -3190,7 +3449,11 @@ string t_java_generator::type_name(t_type* ttype, bool in_container, bool in_ini
   } else if (ttype->is_map()) {
     t_map* tmap = (t_map*) ttype;
     if (in_init) {
-      prefix = "HashMap";
+      if (sorted_containers_) {
+        prefix = "TreeMap";
+      } else {
+        prefix = "HashMap";
+      }
     } else {
       prefix = "Map";
     }
@@ -3200,7 +3463,11 @@ string t_java_generator::type_name(t_type* ttype, bool in_container, bool in_ini
   } else if (ttype->is_set()) {
     t_set* tset = (t_set*) ttype;
     if (in_init) {
-      prefix = "HashSet";
+      if (sorted_containers_) {
+        prefix = "TreeSet";
+      } else { 
+        prefix = "HashSet";
+      }
     } else {
       prefix = "Set";
     }
@@ -3239,7 +3506,7 @@ string t_java_generator::base_type_name(t_base_type* type,
 
   switch (tbase) {
     case t_base_type::TYPE_VOID:
-      return "void";
+      return (in_container ? "Void" : "void");
     case t_base_type::TYPE_STRING:
       if (type->is_binary()) {
         return "ByteBuffer";
@@ -3269,7 +3536,7 @@ string t_java_generator::base_type_name(t_base_type* type,
  * @param tfield The field
  * @param init Whether to initialize the field
  */
-string t_java_generator::declare_field(t_field* tfield, bool init) {
+string t_java_generator::declare_field(t_field* tfield, bool init, bool comment) {
   // TODO(mcslee): do we ever need to initialize the field?
   string result = type_name(tfield->get_type()) + " " + tfield->get_name();
   if (init) {
@@ -3306,11 +3573,14 @@ string t_java_generator::declare_field(t_field* tfield, bool init) {
       result += " = new " + type_name(ttype, false, true) + "()";;
     }
   }
-  result += "; // ";
-  if (tfield->get_req() == t_field::T_OPTIONAL) {
-    result += "optional";
-  } else {
-    result += "required";
+  result += ";";
+  if (comment) {
+    result += " // ";
+    if (tfield->get_req() == t_field::T_OPTIONAL) {
+      result += "optional";
+    } else {
+      result += "required";
+    }
   }
   return result;
 }
@@ -3361,14 +3631,8 @@ string t_java_generator::async_function_call_arglist(t_function* tfunc, bool use
     arglist = argument_list(tfunc->get_arglist(), include_types) + ", ";
   }
 
-  std::string ret_type = "";
-  if (use_base_method) {
-    ret_type += "AsyncClient.";
-  }
-  ret_type += tfunc->get_name() + "_call";
-
   if (include_types) {
-    arglist += "org.apache.thrift.async.AsyncMethodCallback<" + ret_type + "> ";
+    arglist += "org.apache.thrift.async.AsyncMethodCallback ";
   }
   arglist += "resultHandler";
 
@@ -3419,7 +3683,7 @@ string t_java_generator::async_argument_list(t_function* tfunct, t_struct* tstru
     result += ", ";
   }
   if (include_types) {
-    result += "org.apache.thrift.async.AsyncMethodCallback<" + tfunct->get_name() + "_call" + "> ";
+    result += "org.apache.thrift.async.AsyncMethodCallback ";
   }
   result += "resultHandler";
   return result;
@@ -3465,6 +3729,53 @@ string t_java_generator::type_to_enum(t_type* type) {
 
   throw "INVALID TYPE IN type_to_enum: " + type->get_name();
 }
+
+/**
+ * Takes a name and produes a valid Java source file name from it
+ *
+ * @param fromName The name which shall become a valid Java source file name
+ * @return The produced identifier
+ */
+std::string t_java_generator::make_valid_java_filename( std::string const & fromName) {
+    // if any further rules apply to source file names in Java, modify as necessary
+    return make_valid_java_identifier(fromName);
+}
+
+/**
+ * Takes a name and produes a valid Java identifier from it
+ *
+ * @param fromName The name which shall become a valid Java identifier
+ * @return The produced identifier
+ */
+std::string t_java_generator::make_valid_java_identifier( std::string const & fromName) {
+    std::string str = fromName;
+    if( str.empty()) {
+        return str;
+    }
+
+    // tests rely on this
+    assert( ('A' < 'Z') && ('a' < 'z') && ('0' < '9'));
+    
+    // if the first letter is a number, we add an additional underscore in front of it
+    char c = str.at(0);
+    if( ('0' <= c) && (c <= '9')) {
+        str = "_" + str;
+    }
+
+    // following chars: letter, number or underscore
+    for( size_t i = 0;  i < str.size();  ++i) {
+        c = str.at(i);        
+        if( (('A' > c) || (c > 'Z')) && 
+            (('a' > c) || (c > 'z')) && 
+            (('0' > c) || (c > '9')) && 
+            ('_' != c) ) {
+            str.replace( i, 1, "_");
+        }
+    }
+
+    return str;
+}
+
 
 /**
  * Applies the correct style to a string based on the value of nocamel_style_
@@ -3560,8 +3871,29 @@ void t_java_generator::generate_deep_copy_container(ofstream &out, std::string s
     source_name = source_name_p1;
   else
     source_name = source_name_p1 + "." + source_name_p2;
+  
+  bool copy_construct_container;
+  if (container->is_map()) {
+    t_map *tmap = (t_map *)container;
+    copy_construct_container = tmap->get_key_type()->is_base_type() && tmap->get_val_type()->is_base_type();
+  } else {
+    t_type* elem_type = container->is_list() ? ((t_list *) container)->get_elem_type() :
+                                               ((t_set *) container)->get_elem_type();
+    copy_construct_container = elem_type->is_base_type();
+  }
 
-  indent(out) << type_name(type, true, false) << " " << result_name << " = new " << type_name(container, false, true) << "();" << endl;
+  if (copy_construct_container) {
+    // deep copy of base types can be done much more efficiently than iterating over all the elements manually
+    indent(out) << type_name(type, true, false) << " " << result_name << " = new " << type_name(container, false, true) << "(" << source_name << ");" << endl;
+    return;
+  }
+
+  std::string capacity;
+  if (!(sorted_containers_ && (container->is_map() || container->is_set()))) {
+    // unsorted containers accept a capacity value
+    capacity = source_name + ".size()";
+  }
+  indent(out) << type_name(type, true, false) << " " << result_name << " = new " << type_name(container, false, true) << "(" << capacity << ");" << endl;
 
   std::string iterator_element_name = source_name_p1 + "_element";
   std::string result_element_name = result_name + "_copy";
@@ -4194,5 +4526,7 @@ THRIFT_REGISTER_GENERATOR(java, "Java",
 "    hashcode:        Generate quality hashCode methods.\n"
 "    android_legacy:  Do not use java.io.IOException(throwable) (available for Android 2.3 and above).\n"
 "    java5:           Generate Java 1.5 compliant code (includes android_legacy flag).\n"
+"    sorted_containers:\n"
+"                     Use TreeSet/TreeMap instead of HashSet/HashMap as a implementation of set/map.\n"
 )
 

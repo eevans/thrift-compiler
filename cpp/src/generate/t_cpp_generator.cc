@@ -33,8 +33,14 @@
 
 #include "platform.h"
 #include "t_oop_generator.h"
-using namespace std;
 
+using std::map;
+using std::ofstream;
+using std::ostream;
+using std::string;
+using std::vector;
+
+static const string endl = "\n";  // avoid ostream << std::endl flushes
 
 /**
  * C++ code generator. This is legitimacy incarnate.
@@ -357,6 +363,8 @@ void t_cpp_generator::init_generator() {
     "#include <thrift/protocol/TProtocol.h>" << endl <<
     "#include <thrift/transport/TTransport.h>" << endl <<
     endl;
+  // Include C++xx compatibility header
+  f_types_ << "#include <thrift/cxxfunctional.h>" << endl;
 
   // Include other Thrift includes
   const vector<t_program*>& includes = program_->get_includes();
@@ -662,11 +670,14 @@ void t_cpp_generator::print_const_value(ofstream& out, string name, t_type* type
     vector<t_field*>::const_iterator f_iter;
     const map<t_const_value*, t_const_value*>& val = value->get_map();
     map<t_const_value*, t_const_value*>::const_iterator v_iter;
+    bool is_nonrequired_field = false;
     for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
       t_type* field_type = NULL;
+      is_nonrequired_field = false;
       for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
         if ((*f_iter)->get_name() == v_iter->first->get_string()) {
           field_type = (*f_iter)->get_type();
+          is_nonrequired_field = (*f_iter)->get_req() != t_field::T_REQUIRED;
         }
       }
       if (field_type == NULL) {
@@ -674,7 +685,9 @@ void t_cpp_generator::print_const_value(ofstream& out, string name, t_type* type
       }
       string val = render_const_value(out, name, field_type, v_iter->second);
       indent(out) << name << "." << v_iter->first->get_string() << " = " << val << ";" << endl;
-      indent(out) << name << ".__isset." << v_iter->first->get_string() << " = true;" << endl;
+      if(is_nonrequired_field) {
+          indent(out) << name << ".__isset." << v_iter->first->get_string() << " = true;" << endl;
+      }
     }
     out << endl;
   } else if (type->is_map()) {
@@ -1586,7 +1599,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
   if (gen_cob_style_) {
     f_header_ <<
       "#include <thrift/transport/TBufferTransports.h>" << endl << // TMemoryBuffer
-      "#include <tr1/functional>" << endl <<
+      "#include <thrift/cxxfunctional.h>" << endl <<
       "namespace apache { namespace thrift { namespace async {" << endl <<
       "class TAsyncChannel;" << endl <<
       "}}}" << endl;
@@ -1989,7 +2002,6 @@ void t_cpp_generator::generate_service_async_skeleton(t_service* tservice) {
     endl <<
     "#include \"" << get_include_prefix(*get_program()) << svcname << ".h\"" << endl <<
     "#include <thrift/protocol/TBinaryProtocol.h>" << endl <<
-    "#include <thrift/async/TEventServer.h>" << endl <<
     endl <<
     "using namespace ::apache::thrift;" << endl <<
     "using namespace ::apache::thrift::protocol;" << endl <<
@@ -1999,7 +2011,10 @@ void t_cpp_generator::generate_service_async_skeleton(t_service* tservice) {
     "using boost::shared_ptr;" << endl <<
     endl;
 
-  if (!ns.empty()) {
+  // the following code would not compile:
+  // using namespace ;
+  // using namespace ::;
+  if ( (!ns.empty()) && (ns.compare(" ::") != 0)) {
     f_skeleton <<
       "using namespace " << string(ns, 0, ns.size()-2) << ";" << endl <<
       endl;
@@ -2139,11 +2154,11 @@ void t_cpp_generator::generate_service_multiface(t_service* tservice) {
       indent() << "size_t sz = ifaces_.size();" << endl <<
       indent() << "size_t i = 0;" << endl <<
       indent() << "for (; i < (sz - 1); ++i) {" << endl;
-	indent_up();
-	f_header_ <<
+    indent_up();
+    f_header_ <<
       indent() << call << ";" << endl;
-	indent_down();
-	f_header_ <<
+    indent_down();
+    f_header_ <<
       indent() << "}" << endl;
 
     if (!(*f_iter)->get_returntype()->is_void()) {
@@ -2428,12 +2443,12 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       if (!(*f_iter)->is_oneway()) {
         out <<
           indent() << _this << "channel_->sendAndRecvMessage(" <<
-          "std::tr1::bind(cob, this), " << _this << "otrans_.get(), " <<
+          "tcxx::bind(cob, this), " << _this << "otrans_.get(), " <<
           _this << "itrans_.get());" << endl;
       } else {
         out <<
         indent() << _this << "channel_->sendMessage(" <<
-          "std::tr1::bind(cob, this), " << _this << "otrans_.get());" << endl;
+          "tcxx::bind(cob, this), " << _this << "otrans_.get());" << endl;
       }
     }
     scope_down(out);
@@ -2734,8 +2749,8 @@ ProcessorGenerator::ProcessorGenerator(t_cpp_generator* generator,
     class_name_ = service_name_ + pstyle_ + "Processor";
     if_name_ = service_name_ + "CobSvIf";
 
-    finish_cob_ = "std::tr1::function<void(bool ok)> cob, ";
-    finish_cob_decl_ = "std::tr1::function<void(bool ok)>, ";
+    finish_cob_ = "tcxx::function<void(bool ok)> cob, ";
+    finish_cob_decl_ = "tcxx::function<void(bool ok)>, ";
     cob_arg_ = "cob, ";
     ret_type_ = "void ";
   } else {
@@ -2869,25 +2884,25 @@ void ProcessorGenerator::generate_class_definition() {
                         : ", const " + type_name((*f_iter)->get_returntype()) + "& _return");
       f_header_ <<
         indent() << "void return_" << (*f_iter)->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
         "::apache::thrift::protocol::TProtocol* oprot, " <<
         "void* ctx" << ret_arg << ");" << endl;
       if (generator_->gen_templates_) {
         f_header_ <<
           indent() << "void return_" << (*f_iter)->get_name() <<
-          "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+          "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
           "Protocol_* oprot, void* ctx" << ret_arg << ");" << endl;
       }
       // XXX Don't declare throw if it doesn't exist
       f_header_ <<
         indent() << "void throw_" << (*f_iter)->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
         "::apache::thrift::protocol::TProtocol* oprot, void* ctx, " <<
         "::apache::thrift::TDelayedException* _throw);" << endl;
       if (generator_->gen_templates_) {
         f_header_ <<
           indent() << "void throw_" << (*f_iter)->get_name() <<
-          "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+          "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
           "Protocol_* oprot, void* ctx, " <<
           "::apache::thrift::TDelayedException* _throw);" << endl;
       }
@@ -3383,7 +3398,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
     out <<
       "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
       "::process_" << tfunction->get_name() <<
-      "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+      "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
       prot_type << "* iprot, " << prot_type << "* oprot)" << endl;
     scope_up(out);
 
@@ -3464,14 +3479,14 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       // TODO(dreiss): Call the cob immediately?
       out <<
         indent() << "iface_->" << tfunction->get_name() << "(" <<
-        "std::tr1::bind(cob, true)" << endl;
+        "tcxx::bind(cob, true)" << endl;
       indent_up(); indent_up();
     } else {
       string ret_arg, ret_placeholder;
       if (!tfunction->get_returntype()->is_void()) {
         ret_arg = ", const " + type_name(tfunction->get_returntype()) +
           "& _return";
-        ret_placeholder = ", std::tr1::placeholders::_1";
+        ret_placeholder = ", tcxx::placeholders::_1";
       }
 
       // When gen_templates_ is true, the return_ and throw_ functions are
@@ -3479,7 +3494,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       // can resolve the correct overloaded version.
       out <<
         indent() << "void (" << tservice->get_name() << "AsyncProcessor" <<
-        class_suffix << "::*return_fn)(std::tr1::function<void(bool ok)> " <<
+        class_suffix << "::*return_fn)(tcxx::function<void(bool ok)> " <<
         "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx" <<
         ret_arg << ") =" << endl;
       out <<
@@ -3488,7 +3503,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       if (!xceptions.empty()) {
         out <<
           indent() << "void (" << tservice->get_name() << "AsyncProcessor" <<
-          class_suffix << "::*throw_fn)(std::tr1::function<void(bool ok)> " <<
+          class_suffix << "::*throw_fn)(tcxx::function<void(bool ok)> " <<
           "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx, " <<
           "::apache::thrift::TDelayedException* _throw) =" << endl;
         out <<
@@ -3500,13 +3515,13 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
         indent() << "iface_->" << tfunction->get_name() << "(" << endl;
       indent_up(); indent_up();
       out <<
-        indent() << "std::tr1::bind(return_fn, this, cob, seqid, oprot, ctx" <<
+        indent() << "tcxx::bind(return_fn, this, cob, seqid, oprot, ctx" <<
         ret_placeholder << ")";
       if (!xceptions.empty()) {
         out
           << ',' << endl <<
-          indent() << "std::tr1::bind(throw_fn, this, cob, seqid, oprot, " <<
-          "ctx, std::tr1::placeholders::_1)";
+          indent() << "tcxx::bind(throw_fn, this, cob, seqid, oprot, " <<
+          "ctx, tcxx::placeholders::_1)";
       }
     }
 
@@ -3536,7 +3551,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out <<
         "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
         "::return_" << tfunction->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
         prot_type << "* oprot, void* ctx" << ret_arg_decl << ')' << endl;
       scope_up(out);
 
@@ -3605,7 +3620,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out <<
         "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
         "::throw_" << tfunction->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(tcxx::function<void(bool ok)> cob, int32_t seqid, " <<
         prot_type << "* oprot, void* ctx, " <<
         "::apache::thrift::TDelayedException* _throw)" << endl;
       scope_up(out);
@@ -3739,7 +3754,10 @@ void t_cpp_generator::generate_service_skeleton(t_service* tservice) {
     "using boost::shared_ptr;" << endl <<
     endl;
 
-  if (!ns.empty()) {
+  // the following code would not compile:
+  // using namespace ;
+  // using namespace ::;
+  if ( (!ns.empty()) && (ns.compare(" ::") != 0)) {
     f_skeleton <<
       "using namespace " << string(ns, 0, ns.size()-2) << ";" << endl <<
       endl;
@@ -4466,7 +4484,7 @@ string t_cpp_generator::function_signature(t_function* tfunction,
                   ? "()"
                   : ("(" + type_name(ttype) + " const& _return)"));
       if (has_xceptions) {
-        exn_cob = ", std::tr1::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
+        exn_cob = ", tcxx::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
       }
     } else {
       throw "UNKNOWN STYLE";
@@ -4474,7 +4492,7 @@ string t_cpp_generator::function_signature(t_function* tfunction,
 
     return
       "void " + prefix + tfunction->get_name() +
-      "(std::tr1::function<void" + cob_type + "> cob" + exn_cob +
+      "(tcxx::function<void" + cob_type + "> cob" + exn_cob +
       argument_list(arglist, name_params, true) + ")";
   } else {
     throw "UNKNOWN STYLE";
@@ -4604,7 +4622,9 @@ string t_cpp_generator::get_include_prefix(const t_program& program) const {
 
   string::size_type last_slash = string::npos;
   if ((last_slash = include_prefix.rfind("/")) != string::npos) {
-    return include_prefix.substr(0, last_slash) + "/" + out_dir_base_ + "/";
+    return include_prefix.substr(0, last_slash) +
+      (get_program()->is_out_path_absolute() ? "/" : "/" + out_dir_base_ + "/");
+
   }
 
   return "";
