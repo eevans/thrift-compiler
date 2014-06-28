@@ -31,7 +31,14 @@
 #include "platform.h"
 #include "t_oop_generator.h"
 
-using namespace std;
+using std::map;
+using std::ofstream;
+using std::ostringstream;
+using std::string;
+using std::stringstream;
+using std::vector;
+
+static const string endl = "\n";  // avoid ostream << std::endl flushes
 
 /* forward declarations */
 string initial_caps_to_underscores(string name);
@@ -190,8 +197,8 @@ void t_c_glib_generator::init_generator() {
   f_types_ <<
     "/* base includes */" << endl <<
     "#include <glib-object.h>" << endl <<
-    "#include <thrift/thrift_struct.h>" << endl <<
-    "#include <thrift/protocol/thrift_protocol.h>" << endl;
+    "#include <thrift/c_glib/thrift_struct.h>" << endl <<
+    "#include <thrift/c_glib/protocol/thrift_protocol.h>" << endl;
 
   /* include other thrift includes */
   const vector<t_program *> &includes = program_->get_includes();
@@ -222,7 +229,7 @@ void t_c_glib_generator::init_generator() {
     endl <<
     "#include \"" << this->nspace_lc << program_name_u << 
         "_types.h\"" << endl <<
-    "#include <thrift/thrift.h>" << endl <<
+    "#include <thrift/c_glib/thrift.h>" << endl <<
     endl;
 
   f_types_ <<
@@ -415,8 +422,8 @@ void t_c_glib_generator::generate_service (t_service *tservice) {
   // include the headers
   f_service_ <<
     "#include <string.h>" << endl <<
-    "#include <thrift/thrift.h>" << endl <<
-    "#include <thrift/thrift_application_exception.h>" << endl <<
+    "#include <thrift/c_glib/thrift.h>" << endl <<
+    "#include <thrift/c_glib/thrift_application_exception.h>" << endl <<
     "#include \"" << filename << ".h\"" << endl <<
     endl;
 
@@ -1082,7 +1089,7 @@ void t_c_glib_generator::generate_service_client(t_service *tservice) {
         this->nspace_uc << "TYPE_" << service_name_uc << "_IF, " <<
         this->nspace << service_name_ << "If))" << endl <<
     "#define " << this->nspace_uc << "IS_" << service_name_uc << "_IF(obj) " <<
-        "(G_TYPE_CHECK_INSTANCE_TYPE ((obj, " <<
+        "(G_TYPE_CHECK_INSTANCE_TYPE ((obj), " <<
         this->nspace_uc << "TYPE_" << service_name_uc << "_IF))" << endl <<
     "#define " << this->nspace_uc << service_name_uc <<
         "_IF_GET_INTERFACE(inst) (G_TYPE_INSTANCE_GET_INTERFACE ((inst), " <<
@@ -1193,6 +1200,10 @@ void t_c_glib_generator::generate_service_client(t_service *tservice) {
     }
   }
 
+  /* write out the get/set function prototypes */
+  f_header_ << "void " + service_name_lc + "_client_set_property (GObject *object, guint property_id, const GValue *value, GParamSpec *pspec);" << endl;
+  f_header_ << "void " + service_name_lc + "_client_get_property (GObject *object, guint property_id, GValue *value, GParamSpec *pspec);" << endl;
+
   f_header_ << endl;
   // end of header code
 
@@ -1255,7 +1266,14 @@ void t_c_glib_generator::generate_service_client(t_service *tservice) {
     "      sizeof (" << this->nspace << service_name_ << "IfInterface)," <<
         endl <<
     "      NULL,  /* base_init */" << endl <<
-    "      NULL  /* base_finalize */" << endl <<
+    "      NULL,  /* base_finalize */" << endl <<
+    "      NULL,  /* class_init */" << endl <<
+    "      NULL,  /* class_finalize */" << endl <<
+    "      NULL,  /* class_data */" << endl <<
+    "      0,     /* instance_size */" << endl <<
+    "      0,     /* n_preallocs */" << endl <<
+    "      NULL,  /* instance_init */" << endl <<
+    "      NULL   /* value_table */" << endl <<
     "    };" << endl <<
     "    type = g_type_register_static (G_TYPE_INTERFACE," << endl <<
     "                                   \"" << this->nspace << service_name_ <<
@@ -1710,7 +1728,7 @@ void t_c_glib_generator::generate_object(t_struct *tstruct) {
 
   // generate the instance init function
   f_types_impl_ <<
-    "void " << endl <<
+    "static void " << endl <<
     this->nspace_lc << name_u << "_instance_init (" << this->nspace << name << " * object)" << endl <<
     "{" << endl;
 
@@ -1775,7 +1793,7 @@ void t_c_glib_generator::generate_object(t_struct *tstruct) {
 
   /* create the destructor */
   f_types_impl_ <<
-    "void " << endl <<
+    "static void " << endl <<
     this->nspace_lc << name_u << "_finalize (GObject *object)" << endl <<
     "{" << endl;
   indent_up();
@@ -1869,7 +1887,7 @@ void t_c_glib_generator::generate_object(t_struct *tstruct) {
 
 
   f_types_impl_ <<
-    "void " << endl <<
+    "static void " << endl <<
     this->nspace_lc << name_u << "_class_init (ThriftStructClass * cls)" << endl <<
     "{" << endl;
   indent_up();
@@ -1938,7 +1956,7 @@ void t_c_glib_generator::generate_struct_writer (ofstream &out,
   if (is_function) {
     error_ret = -1;
     indent(out) <<
-      "gint32" << endl <<
+      "static gint32" << endl <<
       this->nspace_lc << name_u <<
       "_write (ThriftStruct *object, ThriftProtocol *protocol, GError **error)" << endl;
   }
@@ -2025,7 +2043,7 @@ void t_c_glib_generator::generate_struct_reader(ofstream &out,
     error_ret = -1;
     indent(out) <<
       "/* reads a " << name_u << " object */" << endl <<
-      "gint32" << endl <<
+      "static gint32" << endl <<
       this->nspace_lc << name_u <<
           "_read (ThriftStruct *object, ThriftProtocol *protocol, GError **error)" << endl;
   }
@@ -2814,7 +2832,7 @@ void t_c_glib_generator::generate_deserialize_list_element(ofstream &out,
       case t_base_type::TYPE_I32:
       case t_base_type::TYPE_I64:
       case t_base_type::TYPE_DOUBLE:
-        out << "g_array_append_val (" << prefix << ", " << elem << ");" << endl;
+        out << "g_array_append_vals (" << prefix << ", " << elem << ", 1);" << endl;
         return;
       default:
         throw "compiler error: no array info for type";

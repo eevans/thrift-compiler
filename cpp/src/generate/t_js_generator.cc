@@ -17,6 +17,7 @@
  * under the License.
  */
 
+#include <map>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -29,8 +30,14 @@
 #include "platform.h"
 #include "version.h"
 
-using namespace std;
+using std::map;
+using std::ofstream;
+using std::ostringstream;
+using std::string;
+using std::stringstream;
+using std::vector;
 
+static const string endl = "\n";  // avoid ostream << std::endl flushes
 
 #include "t_oop_generator.h"
 
@@ -263,7 +270,8 @@ void t_js_generator::init_generator() {
   // Print header
   f_types_ <<
     autogen_comment() <<
-    js_includes() << endl;
+    js_includes() << endl <<
+    render_includes() << endl;
 
   if (gen_node_) {
     f_types_ << "var ttypes = module.exports = {};" << endl;
